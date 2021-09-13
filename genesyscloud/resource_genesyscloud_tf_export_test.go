@@ -149,6 +149,7 @@ func generateTfExportResource(
 		resource_types = [
 			"genesyscloud_architect_datatable",
 			"genesyscloud_architect_datatable_row",
+			"genesyscloud_architect_flow",
 			"genesyscloud_auth_role",
 			"genesyscloud_auth_division",
 			"genesyscloud_group",
