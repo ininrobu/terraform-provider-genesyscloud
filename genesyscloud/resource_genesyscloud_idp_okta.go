@@ -3,10 +3,11 @@ package genesyscloud
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v46/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
 )
 
 func getAllIdpOkta(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
@@ -152,6 +153,7 @@ func updateIdpOkta(ctx context.Context, d *schema.ResourceData, meta interface{}
 	}
 
 	log.Printf("Updated IDP Okta")
+	time.Sleep(2 * time.Second)
 	return readIdpOkta(ctx, d, meta)
 }
 

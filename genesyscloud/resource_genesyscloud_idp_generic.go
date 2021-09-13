@@ -3,11 +3,12 @@ package genesyscloud
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v46/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
 )
 
 func getAllIdpGeneric(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
@@ -230,6 +231,7 @@ func updateIdpGeneric(ctx context.Context, d *schema.ResourceData, meta interfac
 	}
 
 	log.Printf("Updated IDP Generic")
+	time.Sleep(2 * time.Second)
 	return readIdpGeneric(ctx, d, meta)
 }
 

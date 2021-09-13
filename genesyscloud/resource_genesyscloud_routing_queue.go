@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v46/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
 )
 
 var (
@@ -222,7 +222,7 @@ func resourceRoutingQueue() *schema.Resource {
 							Type:         schema.TypeFloat,
 							Optional:     true,
 							Default:      5,
-							ValidateFunc: validation.FloatBetween(2, 900),
+							ValidateFunc: validation.FloatBetween(2, 259200),
 						},
 					},
 				},
@@ -238,7 +238,7 @@ func resourceRoutingQueue() *schema.Resource {
 							Description:  "Seconds to wait in this ring before moving to the next.",
 							Type:         schema.TypeFloat,
 							Required:     true,
-							ValidateFunc: validation.FloatBetween(2, 900),
+							ValidateFunc: validation.FloatBetween(2, 259200),
 						},
 						"skills_to_remove": {
 							Description: "Skill IDs to remove on ring exit.",
