@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 var (
@@ -47,7 +50,7 @@ func getAllArchitectDatatables(ctx context.Context, clientConfig *platformclient
 	archAPI := platformclientv2.NewArchitectApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		tables, _, getErr := archAPI.GetFlowsDatatables("", pageNum, 100, "", "", nil)
+		tables, _, getErr := archAPI.GetFlowsDatatables("", pageNum, 100, "", "", nil, "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of datatables: %v", getErr)
 		}
@@ -67,7 +70,9 @@ func getAllArchitectDatatables(ctx context.Context, clientConfig *platformclient
 func architectDatatableExporter() *ResourceExporter {
 	return &ResourceExporter{
 		GetResourcesFunc: getAllWithPooledClient(getAllArchitectDatatables),
-		RefAttrs:         map[string]*RefAttrSettings{}, // No references
+		RefAttrs: map[string]*RefAttrSettings{
+			"division_id": {RefType: "genesyscloud_auth_division"},
+		},
 	}
 }
 
@@ -89,6 +94,12 @@ func resourceArchitectDatatable() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 			},
+			"division_id": {
+				Description: "The division to which this datatable will belong. If not set, the home division will be used.",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+			},
 			"description": {
 				Description: "Description of the datatable.",
 				Type:        schema.TypeString,
@@ -107,6 +118,7 @@ func resourceArchitectDatatable() *schema.Resource {
 
 func createArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	name := d.Get("name").(string)
+	divisionID := d.Get("division_id").(string)
 	description := d.Get("description").(string)
 
 	sdkConfig := meta.(*providerMeta).ClientConfig
@@ -124,6 +136,10 @@ func createArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta 
 		Schema: schema,
 	}
 	// Optional
+	if divisionID != "" {
+		datatable.Division = &platformclientv2.Writabledivision{Id: &divisionID}
+	}
+
 	if description != "" {
 		datatable.Description = &description
 	}
@@ -155,6 +171,7 @@ func readArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta in
 	}
 
 	d.Set("name", *datatable.Name)
+	d.Set("division_id", *datatable.Division.Id)
 
 	if datatable.Description != nil {
 		d.Set("description", *datatable.Description)
@@ -175,6 +192,7 @@ func readArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta in
 func updateArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	id := d.Id()
 	name := d.Get("name").(string)
+	divisionID := d.Get("division_id").(string)
 	description := d.Get("description").(string)
 
 	sdkConfig := meta.(*providerMeta).ClientConfig
@@ -193,6 +211,10 @@ func updateArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta 
 		Schema: schema,
 	}
 	// Optional
+	if divisionID != "" {
+		datatable.Division = &platformclientv2.Writabledivision{Id: &divisionID}
+	}
+
 	if description != "" {
 		datatable.Description = &description
 	}
@@ -217,7 +239,19 @@ func deleteArchitectDatatable(ctx context.Context, d *schema.ResourceData, meta 
 	if err != nil {
 		return diag.Errorf("Failed to delete datatable %s: %s", name, err)
 	}
-	return nil
+
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		_, resp, err := archAPI.GetFlowsDatatable(d.Id(), "")
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// Datatable row deleted
+				log.Printf("Deleted datatable row %s", name)
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting datatable row %s: %s", name, err))
+		}
+		return resource.RetryableError(fmt.Errorf("Datatable row %s still exists", name))
+	})
 }
 
 func buildSdkDatatableSchema(d *schema.ResourceData) (*Jsonschemadocument, diag.Diagnostics) {
@@ -360,10 +394,11 @@ type Jsonschemadocument struct {
 }
 
 type Datatable struct {
-	Id          *string             `json:"id,omitempty"`
-	Name        *string             `json:"name,omitempty"`
-	Description *string             `json:"description,omitempty"`
-	Schema      *Jsonschemadocument `json:"schema,omitempty"`
+	Id          *string                            `json:"id,omitempty"`
+	Name        *string                            `json:"name,omitempty"`
+	Description *string                            `json:"description,omitempty"`
+	Division    *platformclientv2.Writabledivision `json:"division,omitempty"`
+	Schema      *Jsonschemadocument                `json:"schema,omitempty"`
 }
 
 func sdkPutOrPostArchitectDatatable(method string, body *Datatable, api *platformclientv2.ArchitectApi) (*Datatable, *platformclientv2.APIResponse, error) {

@@ -2,12 +2,15 @@ package genesyscloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 	"github.com/nyaruka/phonenumbers"
 )
 
@@ -258,7 +261,7 @@ func deleteLocation(ctx context.Context, d *schema.ResourceData, meta interface{
 	locationsAPI := platformclientv2.NewLocationsApiWithConfig(sdkConfig)
 
 	log.Printf("Deleting location %s", name)
-	retryWhen(isVersionMismatch, func() (*platformclientv2.APIResponse, diag.Diagnostics) {
+	diagErr := retryWhen(isVersionMismatch, func() (*platformclientv2.APIResponse, diag.Diagnostics) {
 		// Directory occasionally returns version errors on deletes if an object was updated at the same time.
 		resp, err := locationsAPI.DeleteLocation(d.Id())
 		if err != nil {
@@ -266,8 +269,29 @@ func deleteLocation(ctx context.Context, d *schema.ResourceData, meta interface{
 		}
 		return nil, nil
 	})
-	log.Printf("Deleted location %s", name)
-	return nil
+	if diagErr != nil {
+		return diagErr
+	}
+
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		location, resp, err := locationsAPI.GetLocation(d.Id(), nil)
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// Location deleted
+				log.Printf("Deleted location %s", d.Id())
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting location %s: %s", d.Id(), err))
+		}
+
+		if *location.State == "deleted" {
+			// Location deleted
+			log.Printf("Deleted location %s", d.Id())
+			return nil
+		}
+
+		return resource.RetryableError(fmt.Errorf("Location %s still exists", d.Id()))
+	})
 }
 
 func buildSdkLocationPath(d *schema.ResourceData) *[]string {

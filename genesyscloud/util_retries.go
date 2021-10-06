@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 func withRetries(ctx context.Context, timeout time.Duration, method func() *resource.RetryError) diag.Diagnostics {
@@ -52,6 +52,13 @@ func isVersionMismatch(resp *platformclientv2.APIResponse) bool {
 
 func isStatus404(resp *platformclientv2.APIResponse) bool {
 	if resp != nil && resp.StatusCode == 404 {
+		return true
+	}
+	return false
+}
+
+func isStatus400(resp *platformclientv2.APIResponse) bool {
+	if resp != nil && resp.StatusCode == 400 {
 		return true
 	}
 	return false

@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 	"github.com/nyaruka/phonenumbers"
 )
 
@@ -648,7 +648,7 @@ func deleteUser(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	}
 
 	// Verify user in deleted state and search index has been updated
-	return withRetries(ctx, 15*time.Second, func() *resource.RetryError {
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		id, err := getDeletedUserId(email, usersAPI)
 		if err != nil {
 			return resource.NonRetryableError(fmt.Errorf("Error searching for deleted user %s: %v", email, err))

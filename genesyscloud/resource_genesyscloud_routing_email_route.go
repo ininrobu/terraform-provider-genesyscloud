@@ -3,12 +3,14 @@ package genesyscloud
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 var (
@@ -119,7 +121,7 @@ func resourceRoutingEmailRoute() *schema.Resource {
 			"from_email": {
 				Description: "The sender email to use for outgoing replies.",
 				Type:        schema.TypeString,
-				Required:    true,
+				Optional:    true,
 			},
 			"queue_id": {
 				Description: "The queue to route the emails to. This should not be set if a flow_id is specified.",
@@ -385,7 +387,18 @@ func deleteRoutingEmailRoute(ctx context.Context, d *schema.ResourceData, meta i
 		return diag.Errorf("Failed to delete email route %s: %s", d.Id(), err)
 	}
 
-	return nil
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		_, resp, err := routingAPI.GetRoutingEmailDomainRoute(domainID, d.Id())
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// Routing email domain route deleted
+				log.Printf("Deleted Routing email domain route %s", d.Id())
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting Routing email domain route %s: %s", d.Id(), err))
+		}
+		return resource.RetryableError(fmt.Errorf("Routing email domain route %s still exists", d.Id()))
+	})
 }
 
 func buildSdkReplyEmailAddress(d *schema.ResourceData) **platformclientv2.Queueemailaddress {

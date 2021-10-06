@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 func init() {
@@ -72,6 +72,9 @@ func New(version string) func() *schema.Provider {
 				"genesyscloud_architect_datatable":                         resourceArchitectDatatable(),
 				"genesyscloud_architect_datatable_row":                     resourceArchitectDatatableRow(),
 				"genesyscloud_architect_flow":                              resourceFlow(),
+				"genesyscloud_architect_ivr":                               resourceArchitectIvrConfig(),
+				"genesyscloud_architect_schedules":                         resourceArchitectSchedules(),
+				"genesyscloud_architect_schedulegroups":                    resourceArchitectScheduleGroups(),
 				"genesyscloud_auth_role":                                   resourceAuthRole(),
 				"genesyscloud_auth_division":                               resourceAuthDivision(),
 				"genesyscloud_group":                                       resourceGroup(),
@@ -95,22 +98,30 @@ func New(version string) func() *schema.Provider {
 				"genesyscloud_routing_skill":                               resourceRoutingSkill(),
 				"genesyscloud_routing_utilization":                         resourceRoutingUtilization(),
 				"genesyscloud_routing_wrapupcode":                          resourceRoutingWrapupCode(),
-				"genesyscloud_telephony_did_pool":                          resourceTelephonyDidPool(),
+				"genesyscloud_telephony_providers_edges_did_pool":          resourceTelephonyDidPool(),
+				"genesyscloud_telephony_providers_edges_edge_group":        resourceEdgeGroup(),
 				"genesyscloud_telephony_providers_edges_phone":             resourcePhone(),
+				"genesyscloud_telephony_providers_edges_site":              resourceSite(),
+				"genesyscloud_telephony_providers_edges_phonebasesettings": resourcePhoneBaseSettings(),
 				"genesyscloud_telephony_providers_edges_trunkbasesettings": resourceTrunkBaseSettings(),
+				"genesyscloud_telephony_providers_edges_trunk":             resourceTrunk(),
 				"genesyscloud_tf_export":                                   resourceTfExport(),
 				"genesyscloud_user":                                        resourceUser(),
 				"genesyscloud_user_roles":                                  resourceUserRoles(),
 			},
 			DataSourcesMap: map[string]*schema.Resource{
-				"genesyscloud_auth_role":            dataSourceAuthRole(),
-				"genesyscloud_auth_division":        dataSourceAuthDivision(),
-				"genesyscloud_flow":                 dataSourceFlow(),
-				"genesyscloud_routing_language":     dataSourceRoutingLanguage(),
-				"genesyscloud_routing_skill":        dataSourceRoutingSkill(),
-				"genesyscloud_routing_email_domain": dataSourceRoutingEmailDomain(),
-				"genesyscloud_script":               dataSourceScript(),
-				"genesyscloud_user":                 dataSourceUser(),
+				"genesyscloud_auth_role":                                   dataSourceAuthRole(),
+				"genesyscloud_auth_division":                               dataSourceAuthDivision(),
+				"genesyscloud_flow":                                        dataSourceFlow(),
+				"genesyscloud_routing_language":                            dataSourceRoutingLanguage(),
+				"genesyscloud_routing_skill":                               dataSourceRoutingSkill(),
+				"genesyscloud_routing_email_domain":                        dataSourceRoutingEmailDomain(),
+				"genesyscloud_script":                                      dataSourceScript(),
+				"genesyscloud_station":                                     dataSourceStation(),
+				"genesyscloud_user":                                        dataSourceUser(),
+				"genesyscloud_telephony_providers_edges_site":              dataSourceSite(),
+				"genesyscloud_telephony_providers_edges_linebasesettings":  dataSourceLineBaseSettings(),
+				"genesyscloud_telephony_providers_edges_phonebasesettings": dataSourcePhoneBaseSettings(),
 			},
 			ConfigureContextFunc: configure(version),
 		}

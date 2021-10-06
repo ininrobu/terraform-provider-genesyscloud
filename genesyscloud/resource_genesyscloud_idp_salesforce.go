@@ -2,12 +2,14 @@ package genesyscloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 func getAllIdpSalesforce(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
@@ -166,6 +168,17 @@ func deleteIdpSalesforce(ctx context.Context, d *schema.ResourceData, meta inter
 	if err != nil {
 		return diag.Errorf("Failed to delete IDP Salesforce: %s", err)
 	}
-	log.Printf("Deleted IDP Salesforce")
-	return nil
+
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		_, resp, err := idpAPI.GetIdentityprovidersSalesforce()
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// IDP Salesforce deleted
+				log.Printf("Deleted Salesforce Ping")
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting IDP Salesforce: %s", err))
+		}
+		return resource.RetryableError(fmt.Errorf("IDP Salesforce still exists"))
+	})
 }

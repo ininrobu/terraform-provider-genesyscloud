@@ -2,12 +2,15 @@ package genesyscloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 func getAllRoutingEmailDomains(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
@@ -191,5 +194,18 @@ func deleteRoutingEmailDomain(ctx context.Context, d *schema.ResourceData, meta 
 	if err != nil {
 		return diag.Errorf("Failed to delete routing email domain %s: %s", d.Id(), err)
 	}
-	return nil
+
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		_, resp, err := routingAPI.GetRoutingEmailDomain(d.Id())
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// Routing email domain deleted
+				log.Printf("Deleted Routing email domain %s", d.Id())
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting Routing email domain %s: %s", d.Id(), err))
+		}
+
+		return resource.RetryableError(fmt.Errorf("Routing email domain %s still exists", d.Id()))
+	})
 }

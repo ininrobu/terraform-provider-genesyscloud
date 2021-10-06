@@ -2,12 +2,15 @@ package genesyscloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v48/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
 )
 
 var (
@@ -316,8 +319,19 @@ func deleteAuthRole(ctx context.Context, d *schema.ResourceData, meta interface{
 	if err != nil {
 		return diag.Errorf("Failed to delete role %s: %s", name, err)
 	}
-	log.Printf("Deleted role %s", name)
-	return nil
+
+	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
+		_, resp, err := authAPI.GetAuthorizationRole(d.Id(), nil)
+		if err != nil {
+			if resp != nil && resp.StatusCode == 404 {
+				// role deleted
+				log.Printf("Deleted role %s", d.Id())
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Error deleting role %s: %s", d.Id(), err))
+		}
+		return resource.RetryableError(fmt.Errorf("Role %s still exists", d.Id()))
+	})
 }
 
 func buildSdkRolePermissions(d *schema.ResourceData) *[]string {
