@@ -9,15 +9,16 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllIvrConfigs(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllIvrConfigs(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	architectAPI := platformclientv2.NewArchitectApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		ivrConfigs, _, getErr := architectAPI.GetArchitectIvrs(pageNum, 100, "", "", "")
+		const pageSize = 100
+		ivrConfigs, _, getErr := architectAPI.GetArchitectIvrs(pageNum, pageSize, "", "", "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of IVR configs: %v", getErr)
 		}
@@ -143,55 +144,56 @@ func readIvrConfig(ctx context.Context, d *schema.ResourceData, meta interface{}
 	architectApi := platformclientv2.NewArchitectApiWithConfig(sdkConfig)
 
 	log.Printf("Reading IVR config %s", d.Id())
-	ivrConfig, resp, getErr := architectApi.GetArchitectIvr(d.Id())
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		ivrConfig, resp, getErr := architectApi.GetArchitectIvr(d.Id())
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read IVR config %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read IVR config %s: %s", d.Id(), getErr))
+		}
+
+		if *ivrConfig.State == "deleted" {
 			d.SetId("")
 			return nil
 		}
-		return diag.Errorf("Failed to read IVR config %s: %s", d.Id(), getErr)
-	}
 
-	if *ivrConfig.State == "deleted" {
-		d.SetId("")
+		d.Set("name", *ivrConfig.Name)
+		d.Set("dnis", flattenIvrDnis(ivrConfig.Dnis))
+
+		if ivrConfig.Description != nil {
+			d.Set("description", *ivrConfig.Description)
+		} else {
+			d.Set("description", nil)
+		}
+
+		if ivrConfig.OpenHoursFlow != nil {
+			d.Set("open_hours_flow_id", *ivrConfig.OpenHoursFlow.Id)
+		} else {
+			d.Set("open_hours_flow_id", nil)
+		}
+
+		if ivrConfig.ClosedHoursFlow != nil {
+			d.Set("closed_hours_flow_id", *ivrConfig.ClosedHoursFlow.Id)
+		} else {
+			d.Set("closed_hours_flow_id", nil)
+		}
+
+		if ivrConfig.HolidayHoursFlow != nil {
+			d.Set("holiday_hours_flow_id", *ivrConfig.HolidayHoursFlow.Id)
+		} else {
+			d.Set("holiday_hours_flow_id", nil)
+		}
+
+		if ivrConfig.ScheduleGroup != nil {
+			d.Set("schedule_group_id", *ivrConfig.ScheduleGroup.Id)
+		} else {
+			d.Set("schedule_group_id", nil)
+		}
+
+		log.Printf("Read IVR config %s %s", d.Id(), *ivrConfig.Name)
 		return nil
-	}
-
-	d.Set("name", *ivrConfig.Name)
-	d.Set("dnis", flattenIvrDnis(ivrConfig.Dnis))
-
-	if ivrConfig.Description != nil {
-		d.Set("description", *ivrConfig.Description)
-	} else {
-		d.Set("description", nil)
-	}
-
-	if ivrConfig.OpenHoursFlow != nil {
-		d.Set("open_hours_flow_id", *ivrConfig.OpenHoursFlow.Id)
-	} else {
-		d.Set("open_hours_flow_id", nil)
-	}
-
-	if ivrConfig.ClosedHoursFlow != nil {
-		d.Set("closed_hours_flow_id", *ivrConfig.ClosedHoursFlow.Id)
-	} else {
-		d.Set("closed_hours_flow_id", nil)
-	}
-
-	if ivrConfig.HolidayHoursFlow != nil {
-		d.Set("holiday_hours_flow_id", *ivrConfig.HolidayHoursFlow.Id)
-	} else {
-		d.Set("holiday_hours_flow_id", nil)
-	}
-
-	if ivrConfig.ScheduleGroup != nil {
-		d.Set("schedule_group_id", *ivrConfig.ScheduleGroup.Id)
-	} else {
-		d.Set("schedule_group_id", nil)
-	}
-
-	log.Printf("Read IVR config %s %s", d.Id(), *ivrConfig.Name)
-	return nil
+	})
 }
 
 func updateIvrConfig(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -239,6 +241,7 @@ func updateIvrConfig(ctx context.Context, d *schema.ResourceData, meta interface
 	}
 
 	log.Printf("Updated IVR config %s", d.Id())
+	time.Sleep(5 * time.Second)
 	return readIvrConfig(ctx, d, meta)
 }
 
@@ -256,7 +259,7 @@ func deleteIvrConfig(ctx context.Context, d *schema.ResourceData, meta interface
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		ivr, resp, err := architectApi.GetArchitectIvr(d.Id())
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// IVR config deleted
 				log.Printf("Deleted IVR config %s", d.Id())
 				return nil

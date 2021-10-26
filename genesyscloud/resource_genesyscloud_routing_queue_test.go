@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceRoutingQueueBasic(t *testing.T) {
@@ -354,7 +354,7 @@ func testVerifyQueuesDestroyed(state *terraform.State) error {
 		queue, resp, err := routingAPI.GetRoutingQueue(rs.Primary.ID)
 		if queue != nil {
 			return fmt.Errorf("Queue (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Queue not found as expected
 			continue
 		} else {

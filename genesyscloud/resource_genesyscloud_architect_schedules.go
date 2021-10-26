@@ -10,15 +10,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/leekchan/timeutil"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllArchitectSchedules(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllArchitectSchedules(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	archAPI := platformclientv2.NewArchitectApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		schedules, _, getErr := archAPI.GetArchitectSchedules(pageNum, 100, "", "", "", nil)
+		const pageSize = 100
+		schedules, _, getErr := archAPI.GetArchitectSchedules(pageNum, pageSize, "", "", "", nil)
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of schedules: %v", getErr)
 		}
@@ -59,6 +60,7 @@ func resourceArchitectSchedules() *schema.Resource {
 				Description: "Name of the schedule.",
 				Type:        schema.TypeString,
 				Required:    true,
+				ForceNew:    true,
 			},
 			"description": {
 				Description: "Description of the schedule.",
@@ -136,39 +138,46 @@ func readArchitectSchedules(ctx context.Context, d *schema.ResourceData, meta in
 
 	log.Printf("Reading schedule %s", d.Id())
 
-	schedule, resp, getErr := archAPI.GetArchitectSchedule(d.Id())
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		schedule, resp, getErr := archAPI.GetArchitectSchedule(d.Id())
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read schedule %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read schedule %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read schedule %s: %s", d.Id(), getErr)
-	}
 
-	Start := new(string)
-	if schedule.Start != nil {
-		*Start = timeutil.Strftime(schedule.Start, "%Y-%m-%dT%H:%M:%S.%f")
+		Start := new(string)
+		if schedule.Start != nil {
+			*Start = timeutil.Strftime(schedule.Start, "%Y-%m-%dT%H:%M:%S.%f")
 
-	} else {
-		Start = nil
-	}
+		} else {
+			Start = nil
+		}
 
-	End := new(string)
-	if schedule.End != nil {
-		*End = timeutil.Strftime(schedule.End, "%Y-%m-%dT%H:%M:%S.%f")
+		End := new(string)
+		if schedule.End != nil {
+			*End = timeutil.Strftime(schedule.End, "%Y-%m-%dT%H:%M:%S.%f")
 
-	} else {
-		End = nil
-	}
+		} else {
+			End = nil
+		}
 
-	d.Set("name", *schedule.Name)
-	d.Set("description", *schedule.Description)
-	d.Set("start", Start)
-	d.Set("end", End)
-	d.Set("rrule", *schedule.Rrule)
+		d.Set("name", *schedule.Name)
+		d.Set("description", nil)
+		if schedule.Description != nil {
+			d.Set("description", *schedule.Description)
+		}
+		d.Set("start", Start)
+		d.Set("end", End)
+		d.Set("rrule", nil)
+		if schedule.Rrule != nil {
+			d.Set("rrule", *schedule.Rrule)
+		}
 
-	log.Printf("Read schedule %s %s", d.Id(), *schedule.Name)
-	return nil
+		log.Printf("Read schedule %s %s", d.Id(), *schedule.Name)
+		return nil
+	})
 }
 
 func updateArchitectSchedules(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -217,6 +226,7 @@ func updateArchitectSchedules(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	log.Printf("Finished updating schedule %s", name)
+	time.Sleep(5 * time.Second)
 	return readArchitectSchedules(ctx, d, meta)
 }
 
@@ -233,7 +243,7 @@ func deleteArchitectSchedules(ctx context.Context, d *schema.ResourceData, meta 
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		schedule, resp, err := archAPI.GetArchitectSchedule(d.Id())
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// schedule deleted
 				log.Printf("Deleted schedule %s", d.Id())
 				return nil

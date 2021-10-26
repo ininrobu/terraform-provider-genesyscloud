@@ -9,15 +9,16 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllRoutingLanguages(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllRoutingLanguages(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		languages, _, getErr := routingAPI.GetRoutingLanguages(100, pageNum, "", "", nil)
+		const pageSize = 100
+		languages, _, getErr := routingAPI.GetRoutingLanguages(pageSize, pageNum, "", "", nil)
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of languages: %v", getErr)
 		}
@@ -90,23 +91,24 @@ func readRoutingLanguage(ctx context.Context, d *schema.ResourceData, meta inter
 	languagesAPI := platformclientv2.NewLanguagesApiWithConfig(sdkConfig)
 
 	log.Printf("Reading language %s", d.Id())
-	language, resp, getErr := languagesAPI.GetRoutingLanguage(d.Id())
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		language, resp, getErr := languagesAPI.GetRoutingLanguage(d.Id())
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read language %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read language %s: %s", d.Id(), getErr))
+		}
+
+		if language.State != nil && *language.State == "deleted" {
 			d.SetId("")
 			return nil
 		}
-		return diag.Errorf("Failed to read language %s: %s", d.Id(), getErr)
-	}
 
-	if language.State != nil && *language.State == "deleted" {
-		d.SetId("")
+		d.Set("name", *language.Name)
+		log.Printf("Read language %s %s", d.Id(), *language.Name)
 		return nil
-	}
-
-	d.Set("name", *language.Name)
-	log.Printf("Read language %s %s", d.Id(), *language.Name)
-	return nil
+	})
 }
 
 func deleteRoutingLanguage(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -125,7 +127,7 @@ func deleteRoutingLanguage(ctx context.Context, d *schema.ResourceData, meta int
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		routingLanguage, resp, err := languagesAPI.GetRoutingLanguage(d.Id())
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Routing language deleted
 				log.Printf("Deleted Routing language %s", d.Id())
 				return nil

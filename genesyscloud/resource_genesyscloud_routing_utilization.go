@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"log"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
@@ -56,7 +58,7 @@ func getSdkUtilizationTypes() []string {
 	return types
 }
 
-func getAllRoutingUtilization(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllRoutingUtilization(_ context.Context, _ *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	// Routing utilization config always exists
 	resources := make(ResourceIDMetaMap)
 	resources["0"] = &ResourceMeta{Name: "routing_utilization"}
@@ -146,27 +148,28 @@ func readRoutingUtilization(ctx context.Context, d *schema.ResourceData, meta in
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(sdkConfig)
 
 	log.Printf("Reading Routing Utilization")
-	settings, resp, getErr := routingAPI.GetRoutingUtilization()
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		settings, resp, getErr := routingAPI.GetRoutingUtilization()
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read Routing Utilization: %s", getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read Routing Utilization: %s", getErr))
 		}
-		return diag.Errorf("Failed to read Routing Utilization: %s", getErr)
-	}
 
-	if settings.Utilization != nil {
-		for sdkType, schemaType := range utilizationMediaTypes {
-			if mediaSettings, ok := (*settings.Utilization)[sdkType]; ok {
-				d.Set(schemaType, flattenUtilizationSetting(mediaSettings))
-			} else {
-				d.Set(schemaType, nil)
+		if settings.Utilization != nil {
+			for sdkType, schemaType := range utilizationMediaTypes {
+				if mediaSettings, ok := (*settings.Utilization)[sdkType]; ok {
+					d.Set(schemaType, flattenUtilizationSetting(mediaSettings))
+				} else {
+					d.Set(schemaType, nil)
+				}
 			}
 		}
-	}
 
-	log.Printf("Read Routing Utilization")
-	return nil
+		log.Printf("Read Routing Utilization")
+		return nil
+	})
 }
 
 func updateRoutingUtilization(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -183,10 +186,12 @@ func updateRoutingUtilization(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	log.Printf("Updated Routing Utilization")
+	// It takes a very long time for the caches to expire
+	time.Sleep(30 * time.Second)
 	return readRoutingUtilization(ctx, d, meta)
 }
 
-func deleteRoutingUtilization(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func deleteRoutingUtilization(_ context.Context, _ *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	sdkConfig := meta.(*providerMeta).ClientConfig
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(sdkConfig)
 

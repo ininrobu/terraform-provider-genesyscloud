@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func dataSourceAuthDivision() *schema.Resource {
@@ -33,7 +33,9 @@ func dataSourceAuthDivisionRead(ctx context.Context, d *schema.ResourceData, m i
 
 	// Query division by name. Retry in case search has not yet indexed the division.
 	return withRetries(ctx, 15*time.Second, func() *resource.RetryError {
-		divisions, _, getErr := authAPI.GetAuthorizationDivisions(100, 1, "", nil, "", "", false, nil, name)
+		const pageSize = 100
+		const pageNum = 1
+		divisions, _, getErr := authAPI.GetAuthorizationDivisions(pageSize, pageNum, "", nil, "", "", false, nil, name)
 		if getErr != nil {
 			return resource.NonRetryableError(fmt.Errorf("Error requesting division %s: %s", name, getErr))
 		}

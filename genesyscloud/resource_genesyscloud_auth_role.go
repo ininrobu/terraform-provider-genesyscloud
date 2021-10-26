@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 var (
@@ -107,12 +107,13 @@ var (
 	}
 )
 
-func getAllAuthRoles(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllAuthRoles(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	authAPI := platformclientv2.NewAuthorizationApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		roles, _, getErr := authAPI.GetAuthorizationRoles(100, pageNum, "", nil, "", "", "", nil, nil, false, nil)
+		const pageSize = 100
+		roles, _, getErr := authAPI.GetAuthorizationRoles(pageSize, pageNum, "", nil, "", "", "", nil, nil, false, nil)
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of roles: %v", getErr)
 		}
@@ -229,43 +230,44 @@ func readAuthRole(ctx context.Context, d *schema.ResourceData, meta interface{})
 
 	log.Printf("Reading role %s", d.Id())
 
-	role, resp, getErr := authAPI.GetAuthorizationRole(d.Id(), nil)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		role, resp, getErr := authAPI.GetAuthorizationRole(d.Id(), nil)
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read role %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read role %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read role %s: %s", d.Id(), getErr)
-	}
 
-	d.Set("name", *role.Name)
+		d.Set("name", *role.Name)
 
-	if role.Description != nil {
-		d.Set("description", *role.Description)
-	} else {
-		d.Set("description", nil)
-	}
+		if role.Description != nil {
+			d.Set("description", *role.Description)
+		} else {
+			d.Set("description", nil)
+		}
 
-	if role.DefaultRoleId != nil {
-		d.Set("default_role_id", *role.DefaultRoleId)
-	} else {
-		d.Set("default_role_id", nil)
-	}
+		if role.DefaultRoleId != nil {
+			d.Set("default_role_id", *role.DefaultRoleId)
+		} else {
+			d.Set("default_role_id", nil)
+		}
 
-	if role.Permissions != nil {
-		d.Set("permissions", stringListToSet(*role.Permissions))
-	} else {
-		d.Set("permissions", nil)
-	}
+		if role.Permissions != nil {
+			d.Set("permissions", stringListToSet(*role.Permissions))
+		} else {
+			d.Set("permissions", nil)
+		}
 
-	if role.PermissionPolicies != nil {
-		d.Set("permission_policies", flattenRolePermissionPolicies(*role.PermissionPolicies))
-	} else {
-		d.Set("permission_policies", nil)
-	}
+		if role.PermissionPolicies != nil {
+			d.Set("permission_policies", flattenRolePermissionPolicies(*role.PermissionPolicies))
+		} else {
+			d.Set("permission_policies", nil)
+		}
 
-	log.Printf("Read role %s %s", d.Id(), *role.Name)
-	return nil
+		log.Printf("Read role %s %s", d.Id(), *role.Name)
+		return nil
+	})
 }
 
 func updateAuthRole(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -289,6 +291,10 @@ func updateAuthRole(ctx context.Context, d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("Updated role %s", name)
+
+	// Give time for public API caches to update
+	// It takes a long time with auth resources
+	time.Sleep(20 * time.Second)
 	return readAuthRole(ctx, d, meta)
 }
 
@@ -323,7 +329,7 @@ func deleteAuthRole(ctx context.Context, d *schema.ResourceData, meta interface{
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		_, resp, err := authAPI.GetAuthorizationRole(d.Id(), nil)
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// role deleted
 				log.Printf("Deleted role %s", d.Id())
 				return nil
@@ -500,7 +506,9 @@ func flattenRoleConditionOperands(operands []platformclientv2.Domainresourcecond
 }
 
 func getRoleID(defaultRoleID string, authAPI *platformclientv2.AuthorizationApi) (string, diag.Diagnostics) {
-	roles, _, getErr := authAPI.GetAuthorizationRoles(1, 1, "", nil, "", "", "", nil, []string{defaultRoleID}, false, nil)
+	const pageSize = 1
+	const pageNum = 1
+	roles, _, getErr := authAPI.GetAuthorizationRoles(pageSize, pageNum, "", nil, "", "", "", nil, []string{defaultRoleID}, false, nil)
 	if getErr != nil {
 		return "", diag.Errorf("Error requesting default role %s: %s", defaultRoleID, getErr)
 	}

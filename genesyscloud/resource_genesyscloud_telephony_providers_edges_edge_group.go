@@ -6,7 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"log"
 	"time"
 )
@@ -120,7 +120,7 @@ func updateEdgeGroup(ctx context.Context, d *schema.ResourceData, meta interface
 	diagErr := retryWhen(isVersionMismatch, func() (*platformclientv2.APIResponse, diag.Diagnostics) {
 		edgeGroupFromApi, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroup(d.Id(), nil)
 		if getErr != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				return resp, diag.Errorf("The edge group does not exist %s: %s", d.Id(), getErr)
 			}
 			return resp, diag.Errorf("Failed to read edge group %s: %s", d.Id(), getErr)
@@ -140,6 +140,7 @@ func updateEdgeGroup(ctx context.Context, d *schema.ResourceData, meta interface
 
 	log.Printf("Updated edge group %s", *edgeGroup.Id)
 
+	time.Sleep(5 * time.Second)
 	return readEdgeGroup(ctx, d, meta)
 }
 
@@ -156,7 +157,7 @@ func deleteEdgeGroup(ctx context.Context, d *schema.ResourceData, meta interface
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		edgeGroup, resp, err := edgesAPI.GetTelephonyProvidersEdgesEdgegroup(d.Id(), nil)
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Edge group deleted
 				log.Printf("Deleted Edge group %s", d.Id())
 				return nil
@@ -179,34 +180,35 @@ func readEdgeGroup(ctx context.Context, d *schema.ResourceData, meta interface{}
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
 
 	log.Printf("Reading edge group %s", d.Id())
-	edgeGroup, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroup(d.Id(), nil)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		edgeGroup, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroup(d.Id(), nil)
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read edge group %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read edge group %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read edge group %s: %s", d.Id(), getErr)
-	}
 
-	d.Set("name", *edgeGroup.Name)
-	d.Set("state", *edgeGroup.State)
-	if edgeGroup.Description != nil {
-		d.Set("description", *edgeGroup.Description)
-	}
-	if edgeGroup.Managed != nil {
-		d.Set("managed", *edgeGroup.Managed)
-	}
-	if edgeGroup.Hybrid != nil {
-		d.Set("hybrid", *edgeGroup.Hybrid)
-	}
-	d.Set("phone_trunk_base_ids", nil)
-	if edgeGroup.PhoneTrunkBases != nil {
-		d.Set("phone_trunk_base_ids", flattenPhoneTrunkBases(*edgeGroup.PhoneTrunkBases))
-	}
+		d.Set("name", *edgeGroup.Name)
+		d.Set("state", *edgeGroup.State)
+		if edgeGroup.Description != nil {
+			d.Set("description", *edgeGroup.Description)
+		}
+		if edgeGroup.Managed != nil {
+			d.Set("managed", *edgeGroup.Managed)
+		}
+		if edgeGroup.Hybrid != nil {
+			d.Set("hybrid", *edgeGroup.Hybrid)
+		}
+		d.Set("phone_trunk_base_ids", nil)
+		if edgeGroup.PhoneTrunkBases != nil {
+			d.Set("phone_trunk_base_ids", flattenPhoneTrunkBases(*edgeGroup.PhoneTrunkBases))
+		}
 
-	log.Printf("Read edge group %s %s", d.Id(), *edgeGroup.Name)
+		log.Printf("Read edge group %s %s", d.Id(), *edgeGroup.Name)
 
-	return nil
+		return nil
+	})
 }
 
 func flattenPhoneTrunkBases(trunkBases []platformclientv2.Trunkbase) *schema.Set {
@@ -217,13 +219,14 @@ func flattenPhoneTrunkBases(trunkBases []platformclientv2.Trunkbase) *schema.Set
 	return schema.NewSet(schema.HashString, interfaceList)
 }
 
-func getAllEdgeGroups(ctx context.Context, sdkConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllEdgeGroups(_ context.Context, sdkConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
 
-	for pageNum := 1; ; pageNum++ {
-		edgeGroups, _, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroups(pageNum, 100, "", "", false)
+	for pageSize := 1; ; pageSize++ {
+		const pageNum = 100
+		edgeGroups, _, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroups(pageSize, pageNum, "", "", false)
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of edge groups: %v", getErr)
 		}

@@ -6,7 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"time"
 )
 
@@ -31,7 +31,9 @@ func dataSourceStationRead(ctx context.Context, d *schema.ResourceData, m interf
 	stationName := d.Get("name").(string)
 
 	return withRetries(ctx, 15*time.Second, func() *resource.RetryError {
-		stations, _, getErr := stationsAPI.GetStations(50, 1, "", stationName, "", "", "", "")
+		const pageSize = 50
+		const pageNum = 1
+		stations, _, getErr := stationsAPI.GetStations(pageSize, pageNum, "", stationName, "", "", "", "")
 		if getErr != nil {
 			return resource.NonRetryableError(fmt.Errorf("Error requesting station %s", getErr))
 		}

@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 var (
@@ -69,12 +70,13 @@ var (
 	}
 )
 
-func getAllIntegrationActions(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllIntegrationActions(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	integAPI := platformclientv2.NewIntegrationsApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		actions, _, getErr := integAPI.GetIntegrationsActions(100, pageNum, "", "", "", "", "", "", "", "")
+		const pageSize = 100
+		actions, _, getErr := integAPI.GetIntegrationsActions(pageSize, pageNum, "", "", "", "", "", "", "", "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of integration actions: %v", getErr)
 		}
@@ -215,94 +217,95 @@ func readIntegrationAction(ctx context.Context, d *schema.ResourceData, meta int
 
 	log.Printf("Reading integration action %s", d.Id())
 
-	action, resp, getErr := sdkGetIntegrationAction(d.Id(), integAPI)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		action, resp, getErr := sdkGetIntegrationAction(d.Id(), integAPI)
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read integration action %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read integration action %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read integration action %s: %s", d.Id(), getErr)
-	}
 
-	// Retrieve config request/response templates
-	reqTemp, resp, getErr := sdkGetIntegrationActionTemplate(d.Id(), "requesttemplate.vm", integAPI)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+		// Retrieve config request/response templates
+		reqTemp, resp, getErr := sdkGetIntegrationActionTemplate(d.Id(), "requesttemplate.vm", integAPI)
+		if getErr != nil {
+			if isStatus404(resp) {
+				d.SetId("")
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read request template for integration action %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read request template for integration action %s: %s", d.Id(), getErr)
-	}
 
-	successTemp, resp, getErr := sdkGetIntegrationActionTemplate(d.Id(), "successtemplate.vm", integAPI)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+		successTemp, resp, getErr := sdkGetIntegrationActionTemplate(d.Id(), "successtemplate.vm", integAPI)
+		if getErr != nil {
+			if isStatus404(resp) {
+				d.SetId("")
+				return nil
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read success template for integration action %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read success template for integration action %s: %s", d.Id(), getErr)
-	}
 
-	if action.Name != nil {
-		d.Set("name", *action.Name)
-	} else {
-		d.Set("name", nil)
-	}
-
-	if action.Category != nil {
-		d.Set("category", *action.Category)
-	} else {
-		d.Set("category", nil)
-	}
-
-	if action.IntegrationId != nil {
-		d.Set("integration_id", *action.IntegrationId)
-	} else {
-		d.Set("integration_id", nil)
-	}
-
-	if action.Secure != nil {
-		d.Set("secure", *action.Secure)
-	} else {
-		d.Set("secure", nil)
-	}
-
-	if action.Contract != nil && action.Contract.Input != nil && action.Contract.Input.InputSchema != nil {
-		input, err := flattenActionContract(*action.Contract.Input.InputSchema)
-		if err != nil {
-			return err
+		if action.Name != nil {
+			d.Set("name", *action.Name)
+		} else {
+			d.Set("name", nil)
 		}
-		d.Set("contract_input", input)
-	} else {
-		d.Set("contract_input", nil)
-	}
 
-	if action.Contract != nil && action.Contract.Output != nil && action.Contract.Output.SuccessSchema != nil {
-		output, err := flattenActionContract(*action.Contract.Output.SuccessSchema)
-		if err != nil {
-			return err
+		if action.Category != nil {
+			d.Set("category", *action.Category)
+		} else {
+			d.Set("category", nil)
 		}
-		d.Set("contract_output", output)
-	} else {
-		d.Set("contract_output", nil)
-	}
 
-	if action.Config != nil && action.Config.Request != nil {
-		action.Config.Request.RequestTemplate = reqTemp
-		d.Set("config_request", flattenActionConfigRequest(*action.Config.Request))
-	} else {
-		d.Set("config_request", nil)
-	}
+		if action.IntegrationId != nil {
+			d.Set("integration_id", *action.IntegrationId)
+		} else {
+			d.Set("integration_id", nil)
+		}
 
-	if action.Config != nil && action.Config.Response != nil {
-		action.Config.Response.SuccessTemplate = successTemp
-		d.Set("config_response", flattenActionConfigResponse(*action.Config.Response))
-	} else {
-		d.Set("config_response", nil)
-	}
+		if action.Secure != nil {
+			d.Set("secure", *action.Secure)
+		} else {
+			d.Set("secure", nil)
+		}
 
-	log.Printf("Read integration action %s %s", d.Id(), *action.Name)
-	return nil
+		if action.Contract != nil && action.Contract.Input != nil && action.Contract.Input.InputSchema != nil {
+			input, err := flattenActionContract(*action.Contract.Input.InputSchema)
+			if err != nil {
+				return resource.NonRetryableError(fmt.Errorf("%v", err))
+			}
+			d.Set("contract_input", input)
+		} else {
+			d.Set("contract_input", nil)
+		}
+
+		if action.Contract != nil && action.Contract.Output != nil && action.Contract.Output.SuccessSchema != nil {
+			output, err := flattenActionContract(*action.Contract.Output.SuccessSchema)
+			if err != nil {
+				return resource.NonRetryableError(fmt.Errorf("%v", err))
+			}
+			d.Set("contract_output", output)
+		} else {
+			d.Set("contract_output", nil)
+		}
+
+		if action.Config != nil && action.Config.Request != nil {
+			action.Config.Request.RequestTemplate = reqTemp
+			d.Set("config_request", flattenActionConfigRequest(*action.Config.Request))
+		} else {
+			d.Set("config_request", nil)
+		}
+
+		if action.Config != nil && action.Config.Response != nil {
+			action.Config.Response.SuccessTemplate = successTemp
+			d.Set("config_response", flattenActionConfigResponse(*action.Config.Response))
+		} else {
+			d.Set("config_response", nil)
+		}
+
+		log.Printf("Read integration action %s %s", d.Id(), *action.Name)
+		return nil
+	})
 }
 
 func updateIntegrationAction(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -337,6 +340,7 @@ func updateIntegrationAction(ctx context.Context, d *schema.ResourceData, meta i
 	}
 
 	log.Printf("Updated integration action %s", name)
+	time.Sleep(5 * time.Second)
 	return readIntegrationAction(ctx, d, meta)
 }
 
@@ -355,7 +359,7 @@ func deleteIntegrationAction(ctx context.Context, d *schema.ResourceData, meta i
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		_, resp, err := sdkGetIntegrationAction(d.Id(), integAPI)
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Integration action deleted
 				log.Printf("Deleted Integration action %s", d.Id())
 				return nil
@@ -534,7 +538,7 @@ func sdkPostIntegrationAction(body *IntegrationAction, api *platformclientv2.Int
 	headerParams["Accept"] = "application/json"
 
 	var successPayload *IntegrationAction
-	response, err := apiClient.CallAPI(path, "POST", body, headerParams, nil, nil, "", nil)
+	response, err := apiClient.CallAPI(path, http.MethodPost, body, headerParams, nil, nil, "", nil)
 	if err != nil {
 		// Nothing special to do here, but do avoid processing the response
 	} else if err == nil && response.Error != nil {
@@ -570,7 +574,7 @@ func sdkGetIntegrationAction(actionId string, api *platformclientv2.Integrations
 	headerParams["Accept"] = "application/json"
 
 	var successPayload *IntegrationAction
-	response, err := apiClient.CallAPI(path, "GET", nil, headerParams, queryParams, nil, "", nil)
+	response, err := apiClient.CallAPI(path, http.MethodGet, nil, headerParams, queryParams, nil, "", nil)
 	if err != nil {
 		// Nothing special to do here, but do avoid processing the response
 	} else if err == nil && response.Error != nil {
@@ -603,7 +607,7 @@ func sdkGetIntegrationActionTemplate(actionId, templateName string, api *platfor
 	headerParams["Accept"] = "*/*"
 
 	var successPayload *string
-	response, err := apiClient.CallAPI(path, "GET", nil, headerParams, queryParams, nil, "", nil)
+	response, err := apiClient.CallAPI(path, http.MethodGet, nil, headerParams, queryParams, nil, "", nil)
 	if err != nil {
 		// Nothing special to do here, but do avoid processing the response
 	} else if err == nil && response.Error != nil {

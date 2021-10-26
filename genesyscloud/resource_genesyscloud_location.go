@@ -10,16 +10,17 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"github.com/nyaruka/phonenumbers"
 )
 
-func getAllLocations(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllLocations(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	locationsAPI := platformclientv2.NewLocationsApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		locations, _, getErr := locationsAPI.GetLocations(100, pageNum, nil, "")
+		const pageSize = 100
+		locations, _, getErr := locationsAPI.GetLocations(pageSize, pageNum, nil, "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of locations: %v", getErr)
 		}
@@ -177,39 +178,41 @@ func readLocation(ctx context.Context, d *schema.ResourceData, meta interface{})
 	locationsAPI := platformclientv2.NewLocationsApiWithConfig(sdkConfig)
 
 	log.Printf("Reading location %s", d.Id())
-	location, resp, getErr := locationsAPI.GetLocation(d.Id(), nil)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		location, resp, getErr := locationsAPI.GetLocation(d.Id(), nil)
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read location %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read location %s: %s", d.Id(), getErr))
+		}
+
+		if location.State != nil && *location.State == "deleted" {
 			d.SetId("")
 			return nil
 		}
-		return diag.Errorf("Failed to read location %s: %s", d.Id(), getErr)
-	}
 
-	if location.State != nil && *location.State == "deleted" {
-		d.SetId("")
+		d.Set("name", *location.Name)
+
+		if location.Notes != nil {
+			d.Set("notes", *location.Notes)
+		} else {
+			d.Set("notes", nil)
+		}
+
+		if location.Path != nil {
+			d.Set("path", *location.Path)
+		} else {
+			d.Set("path", nil)
+		}
+
+		d.Set("emergency_number", flattenLocationEmergencyNumber(location.EmergencyNumber))
+		d.Set("address", flattenLocationAddress(location.Address))
+
+		log.Printf("Read location %s %s", d.Id(), *location.Name)
 		return nil
-	}
-
-	d.Set("name", *location.Name)
-
-	if location.Notes != nil {
-		d.Set("notes", *location.Notes)
-	} else {
-		d.Set("notes", nil)
-	}
-
-	if location.Path != nil {
-		d.Set("path", *location.Path)
-	} else {
-		d.Set("path", nil)
-	}
-
-	d.Set("emergency_number", flattenLocationEmergencyNumber(location.EmergencyNumber))
-	d.Set("address", flattenLocationAddress(location.Address))
-
-	log.Printf("Read location %s %s", d.Id(), *location.Name)
-	return nil
+	})
 }
 
 func updateLocation(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -251,6 +254,7 @@ func updateLocation(ctx context.Context, d *schema.ResourceData, meta interface{
 	}
 
 	log.Printf("Updated location %s %s", name, d.Id())
+	time.Sleep(5 * time.Second)
 	return readLocation(ctx, d, meta)
 }
 
@@ -276,7 +280,7 @@ func deleteLocation(ctx context.Context, d *schema.ResourceData, meta interface{
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		location, resp, err := locationsAPI.GetLocation(d.Id(), nil)
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Location deleted
 				log.Printf("Deleted location %s", d.Id())
 				return nil
@@ -388,7 +392,7 @@ func flattenLocationAddress(addrConfig *platformclientv2.Locationaddress) []inte
 	return []interface{}{addrSettings}
 }
 
-func comparePhoneNumbers(k, old, new string, d *schema.ResourceData) bool {
+func comparePhoneNumbers(_, old, new string, _ *schema.ResourceData) bool {
 	oldNum, err := phonenumbers.Parse(old, "US")
 	if err != nil {
 		return old == new

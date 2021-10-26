@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func init() {
@@ -75,6 +75,7 @@ func New(version string) func() *schema.Provider {
 				"genesyscloud_architect_ivr":                               resourceArchitectIvrConfig(),
 				"genesyscloud_architect_schedules":                         resourceArchitectSchedules(),
 				"genesyscloud_architect_schedulegroups":                    resourceArchitectScheduleGroups(),
+				"genesyscloud_architect_user_prompt":                       resourceArchitectUserPrompt(),
 				"genesyscloud_auth_role":                                   resourceAuthRole(),
 				"genesyscloud_auth_division":                               resourceAuthDivision(),
 				"genesyscloud_group":                                       resourceGroup(),
@@ -110,18 +111,36 @@ func New(version string) func() *schema.Provider {
 				"genesyscloud_user_roles":                                  resourceUserRoles(),
 			},
 			DataSourcesMap: map[string]*schema.Resource{
+				"genesyscloud_architect_datatable":                         dataSourceArchitectDatatable(),
+				"genesyscloud_architect_schedules":                         dataSourceSchedule(),
+				"genesyscloud_architect_schedulegroups":                    dataSourceArchitectScheduleGroups(),
+				"genesyscloud_architect_user_prompt":                       dataSourceUserPrompt(),
 				"genesyscloud_auth_role":                                   dataSourceAuthRole(),
 				"genesyscloud_auth_division":                               dataSourceAuthDivision(),
 				"genesyscloud_flow":                                        dataSourceFlow(),
+				"genesyscloud_group":                                       dataSourceGroup(),
+				"genesyscloud_integration":                                 dataSourceIntegration(),
+				"genesyscloud_integration_action":                          dataSourceIntegrationAction(),
+				"genesyscloud_integration_credential":                      dataSourceIntegrationCredential(),
+				"genesyscloud_location":                                    dataSourceLocation(),
+				"genesyscloud_oauth_client":                                dataSourceOAuthClient(),
 				"genesyscloud_routing_language":                            dataSourceRoutingLanguage(),
+				"genesyscloud_routing_queue":                               dataSourceRoutingQueue(),
 				"genesyscloud_routing_skill":                               dataSourceRoutingSkill(),
 				"genesyscloud_routing_email_domain":                        dataSourceRoutingEmailDomain(),
+				"genesyscloud_routing_wrapupcode":                          dataSourceRoutingWrapupcode(),
 				"genesyscloud_script":                                      dataSourceScript(),
 				"genesyscloud_station":                                     dataSourceStation(),
 				"genesyscloud_user":                                        dataSourceUser(),
+				"genesyscloud_telephony_providers_edges_did":               dataSourceDid(),
+				"genesyscloud_telephony_providers_edges_did_pool":          dataSourceDidPool(),
+				"genesyscloud_telephony_providers_edges_edge_group":        dataSourceEdgeGroup(),
 				"genesyscloud_telephony_providers_edges_site":              dataSourceSite(),
 				"genesyscloud_telephony_providers_edges_linebasesettings":  dataSourceLineBaseSettings(),
+				"genesyscloud_telephony_providers_edges_phone":             dataSourcePhone(),
 				"genesyscloud_telephony_providers_edges_phonebasesettings": dataSourcePhoneBaseSettings(),
+				"genesyscloud_telephony_providers_edges_trunk":             dataSourceTrunk(),
+				"genesyscloud_telephony_providers_edges_trunkbasesettings": dataSourceTrunkBaseSettings(),
 			},
 			ConfigureContextFunc: configure(version),
 		}
@@ -191,10 +210,11 @@ func initClientConfig(data *schema.ResourceData, version string, config *platfor
 	config.BasePath = basePath
 	if data.Get("sdk_debug").(bool) {
 		config.LoggingConfiguration = &platformclientv2.LoggingConfiguration{
-			LogLevel:        platformclientv2.LDebug,
+			LogLevel:        platformclientv2.LTrace,
 			LogRequestBody:  true,
 			LogResponseBody: true,
 		}
+		config.LoggingConfiguration.SetLogToConsole(false)
 		config.LoggingConfiguration.SetLogFormat(platformclientv2.Text)
 		config.LoggingConfiguration.SetLogFilePath("sdk_debug.log")
 	}

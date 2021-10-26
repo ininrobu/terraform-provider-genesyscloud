@@ -2,17 +2,18 @@ package genesyscloud
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceArchitectSchedules(t *testing.T) {
 	var (
 		schedResource1 = "arch-sched1"
-		name           = "CX as Code Schedule"
+		name           = "CX as Code Schedule" + uuid.NewString()
 		description    = "Sample Schedule by CX as Code"
 		start          = "2021-08-04T08:00:00.000000"
 		start2         = "2021-08-04T09:00:00.000000"
@@ -98,7 +99,7 @@ func testVerifySchedulesDestroyed(state *terraform.State) error {
 		sched, resp, err := archAPI.GetArchitectSchedule(rs.Primary.ID)
 		if sched != nil {
 			return fmt.Errorf("Schedule (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Schedule not found as expected
 			continue
 		} else {

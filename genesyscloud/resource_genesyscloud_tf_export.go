@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	"hash/fnv"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -136,6 +139,13 @@ func createTfExport(ctx context.Context, d *schema.ResourceData, meta interface{
 		if resourceTypeJSONMaps[resource.Type] == nil {
 			resourceTypeJSONMaps[resource.Type] = make(map[string]jsonMap)
 		}
+
+		if len(resourceTypeJSONMaps[resource.Type][resource.Name]) > 0 {
+			algorithm := fnv.New32()
+			algorithm.Write([]byte(uuid.NewString()))
+			resource.Name = resource.Name + "_" + strconv.FormatUint(uint64(algorithm.Sum32()), 10)
+		}
+
 		resourceTypeJSONMaps[resource.Type][resource.Name] = jsonResult
 	}
 
@@ -175,7 +185,7 @@ func sourceForVersion(version string) string {
 	return providerSource
 }
 
-func readTfExport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func readTfExport(_ context.Context, d *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	// If the output config file doesn't exist, mark the resource for creation.
 	path := d.Id()
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -185,7 +195,7 @@ func readTfExport(ctx context.Context, d *schema.ResourceData, meta interface{})
 	return nil
 }
 
-func deleteTfExport(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func deleteTfExport(_ context.Context, d *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	configPath := d.Id()
 	if _, err := os.Stat(configPath); err == nil {
 		log.Printf("Deleting export config %s", configPath)
@@ -341,6 +351,9 @@ func getResourceState(ctx context.Context, resource *schema.Resource, resID stri
 
 	state, err := resource.RefreshWithoutUpgrade(ctx, instanceState, meta)
 	if err != nil {
+		if strings.Contains(fmt.Sprintf("%v", err), "API Error: 404") {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if state == nil || state.ID == "" {

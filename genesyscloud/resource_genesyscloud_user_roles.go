@@ -3,10 +3,11 @@ package genesyscloud
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func userRolesExporter() *ResourceExporter {
@@ -58,7 +59,7 @@ func createUserRoles(ctx context.Context, d *schema.ResourceData, meta interface
 	return updateUserRoles(ctx, d, meta)
 }
 
-func readUserRoles(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func readUserRoles(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	sdkConfig := meta.(*providerMeta).ClientConfig
 	authAPI := platformclientv2.NewAuthorizationApiWithConfig(sdkConfig)
 
@@ -87,6 +88,7 @@ func updateUserRoles(ctx context.Context, d *schema.ResourceData, meta interface
 	}
 
 	log.Printf("Updated user roles for %s", d.Id())
+	time.Sleep(10 * time.Second)
 	return readUserRoles(ctx, d, meta)
 }
 

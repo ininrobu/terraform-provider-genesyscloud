@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceAuthRoleBasic(t *testing.T) {
@@ -285,7 +285,7 @@ func testVerifyRolesDestroyed(state *terraform.State) error {
 		role, resp, err := authAPI.GetAuthorizationRole(rs.Primary.ID, nil)
 		if role != nil {
 			return fmt.Errorf("Role (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Role not found as expected
 			continue
 		} else {

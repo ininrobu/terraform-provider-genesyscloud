@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"log"
+	"time"
 )
 
 func resourceTrunk() *schema.Resource {
@@ -37,6 +39,12 @@ func resourceTrunk() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 			},
+			"name": {
+				Description: "The name of the trunk. This property is read only and populated with the auto generated name.",
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:	true,
+			},
 		},
 	}
 }
@@ -49,7 +57,7 @@ func createTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 
 	trunkBase, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunkbasesetting(trunkBaseSettingsId, true)
 	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+		if isStatus404(resp) {
 			return nil
 		}
 		return diag.Errorf("Failed to read trunk base settings %s: %s", d.Id(), getErr)
@@ -61,7 +69,7 @@ func createTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 		edgeId := edgeIdI.(string)
 		edge, resp, getErr := edgesAPI.GetTelephonyProvidersEdge(edgeId, nil)
 		if getErr != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				return nil
 			}
 			return diag.Errorf("Failed to read edge %s: %s", edgeId, getErr)
@@ -83,7 +91,7 @@ func createTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 		edgeGroupId := edgeGroupIdI.(string)
 		edgeGroup, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesEdgegroup(edgeGroupId, nil)
 		if getErr != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				return diag.Errorf("Failed to get edge group %s: %s", edgeGroupId, getErr)
 			}
 			return diag.Errorf("Failed to read edge group %s: %s", edgeGroupId, getErr)
@@ -110,6 +118,7 @@ func createTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("Created trunk %s", *trunk.Id)
 
+	time.Sleep(5 * time.Second)
 	return readTrunk(ctx, d, meta)
 }
 
@@ -119,7 +128,8 @@ func getTrunkByTrunkBaseId(trunkBaseId string, meta interface{}) (*platformclien
 
 	// It should return the trunk as the first object. Paginating to be safe
 	for pageNum := 1; ; pageNum++ {
-		trunks, _, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunks(pageNum, 100, "", "", "", trunkBaseId, "")
+		const pageSize = 100
+		trunks, _, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunks(pageNum, pageSize, "", "", "", trunkBaseId, "")
 		if getErr != nil {
 			return nil, fmt.Errorf("Failed to get page of edge groups: %v", getErr)
 		}
@@ -147,21 +157,24 @@ func readTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) di
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
 
 	log.Printf("Reading trunk %s", d.Id())
-	trunk, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunk(d.Id())
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		trunk, resp, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunk(d.Id())
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read trunk %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read trunk %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read trunk %s: %s", d.Id(), getErr)
-	}
 
-	log.Printf("Read trunk %s %s", d.Id(), *trunk.Name)
+		d.Set("name", *trunk.Name)
 
-	return nil
+		log.Printf("Read trunk %s %s", d.Id(), *trunk.Name)
+
+		return nil
+	})
 }
 
-func deleteTrunk(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func deleteTrunk(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	// Does not delete the trunk. This resource will just no longer manage trunks.
 	return nil
 }
@@ -182,7 +195,8 @@ func getAllTrunks(ctx context.Context, sdkConfig *platformclientv2.Configuration
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		trunks, _, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunks(pageNum, 100, "", "", "", "", "")
+		const pageSize = 100
+		trunks, _, getErr := edgesAPI.GetTelephonyProvidersEdgesTrunks(pageNum, pageSize, "", "", "", "", "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of trunks: %v", getErr)
 		}

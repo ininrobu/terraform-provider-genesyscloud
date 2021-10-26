@@ -2,27 +2,28 @@ package genesyscloud
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceArchitectScheduleGroups(t *testing.T) {
 	var (
 		schedGroupResource1 = "arch-sched-group1"
-		name                = "Schedule Group x"
+		name                = "Schedule Group x" + uuid.NewString()
 		description         = "Sample Schedule Group by CX as Code"
 		time_zone           = "Asia/Singapore"
 
 		schedResource1 = "arch-sched1"
 		schedResource2 = "arch-sched2"
 		schedResource3 = "arch-sched3"
-		openSched      = "Open Schedule"
-		closedSched    = "Closed Schedule"
-		holidaySched   = "Holiday Schedule"
+		openSched      = "Open Schedule" + uuid.NewString()
+		closedSched    = "Closed Schedule" + uuid.NewString()
+		holidaySched   = "Holiday Schedule" + uuid.NewString()
 		schedDesc      = "Sample Schedule by CX as Code"
 		start          = "2021-08-04T08:00:00.000000"
 		end            = "2021-08-04T17:00:00.000000"
@@ -151,7 +152,7 @@ func testVerifyScheduleGroupsDestroyed(state *terraform.State) error {
 		schedGroup, resp, err := archAPI.GetArchitectSchedulegroup(rs.Primary.ID)
 		if schedGroup != nil {
 			return fmt.Errorf("Schedule group (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Schedule group not found as expected
 			continue
 		} else {

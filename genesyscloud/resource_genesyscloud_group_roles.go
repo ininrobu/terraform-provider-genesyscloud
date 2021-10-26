@@ -3,10 +3,11 @@ package genesyscloud
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func groupRolesExporter() *ResourceExporter {
@@ -58,7 +59,7 @@ func createGroupRoles(ctx context.Context, d *schema.ResourceData, meta interfac
 	return updateGroupRoles(ctx, d, meta)
 }
 
-func readGroupRoles(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func readGroupRoles(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	sdkConfig := meta.(*providerMeta).ClientConfig
 	authAPI := platformclientv2.NewAuthorizationApiWithConfig(sdkConfig)
 
@@ -87,10 +88,11 @@ func updateGroupRoles(ctx context.Context, d *schema.ResourceData, meta interfac
 	}
 
 	log.Printf("Updated group roles for %s", d.Id())
+	time.Sleep(5 * time.Second)
 	return readGroupRoles(ctx, d, meta)
 }
 
-func deleteGroupRoles(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func deleteGroupRoles(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	// Does not delete groups or roles. This resource will just no longer manage roles.
 	return nil
 }

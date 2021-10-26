@@ -2,16 +2,27 @@ package genesyscloud
 
 import (
 	"context"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func withRetries(ctx context.Context, timeout time.Duration, method func() *resource.RetryError) diag.Diagnostics {
 	return diag.FromErr(resource.RetryContext(ctx, timeout, method))
+}
+
+func withRetriesForRead(ctx context.Context, timeout time.Duration, d *schema.ResourceData, method func() *resource.RetryError) diag.Diagnostics {
+	err := diag.FromErr(resource.RetryContext(ctx, timeout, method))
+	if err != nil && strings.Contains(fmt.Sprintf("%v", err), "API Error: 404") {
+		// Set ID empty if the object isn't found after the specified timeout
+		d.SetId("")
+	}
+	return err
 }
 
 type checkResponseFunc func(resp *platformclientv2.APIResponse) bool

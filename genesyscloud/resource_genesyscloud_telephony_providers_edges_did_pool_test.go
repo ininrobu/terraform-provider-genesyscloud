@@ -2,12 +2,14 @@ package genesyscloud
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 type didPoolStruct struct {
@@ -21,8 +23,10 @@ type didPoolStruct struct {
 
 func TestAccResourceDidPoolBasic(t *testing.T) {
 	didPoolResource1 := "test-didpool1"
-	didPoolStartPhoneNumber1 := "+13175550000"
-	didPoolEndPhoneNumber1 := "+13175550005"
+	rand.Seed(time.Now().Unix())
+	n := rand.Intn(9)
+	didPoolStartPhoneNumber1 := fmt.Sprintf("+1417554001%v", n)
+	didPoolEndPhoneNumber1 := fmt.Sprintf("+1417554001%v", n + 1)
 	didPoolDescription1 := "Test description"
 	didPoolComments1 := "Test comments"
 	didPoolProvider1 := "PURE_CLOUD"
@@ -78,6 +82,31 @@ func TestAccResourceDidPoolBasic(t *testing.T) {
 	})
 }
 
+func deleteDidPoolWithStartNumber(startNumber string) error {
+	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
+
+	for pageNum := 1; ; pageNum++ {
+		didPools, _, getErr := edgesAPI.GetTelephonyProvidersEdgesDidpools(100, pageNum, "", nil)
+		if getErr != nil {
+			return getErr
+		}
+
+		if didPools.Entities == nil || len(*didPools.Entities) == 0 {
+			break
+		}
+
+		for _, didPool := range *didPools.Entities {
+			if didPool.StartPhoneNumber != nil && *didPool.StartPhoneNumber == startNumber {
+				_, err := edgesAPI.DeleteTelephonyProvidersEdgesDidpool(*didPool.Id)
+				time.Sleep(20 * time.Second)
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func generateDidPoolResource(didPool *didPoolStruct) string {
 	return fmt.Sprintf(`resource "genesyscloud_telephony_providers_edges_did_pool" "%s" {
 		start_phone_number = "%s"
@@ -110,7 +139,7 @@ func testVerifyDidPoolsDestroyed(state *terraform.State) error {
 			return fmt.Errorf("DID Pool (%s) still exists", rs.Primary.ID)
 		}
 
-		if resp != nil && resp.StatusCode == 404 {
+		if isStatus404(resp) {
 			// DID pool not found as expected
 			continue
 		}

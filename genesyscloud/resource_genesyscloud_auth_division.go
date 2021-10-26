@@ -9,15 +9,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllAuthDivisions(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllAuthDivisions(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	authAPI := platformclientv2.NewAuthorizationApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		divisions, _, getErr := authAPI.GetAuthorizationDivisions(100, pageNum, "", nil, "", "", false, nil, "")
+		const pageSize = 100
+		divisions, _, getErr := authAPI.GetAuthorizationDivisions(pageSize, pageNum, "", nil, "", "", false, nil, "")
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of divisions: %v", getErr)
 		}
@@ -102,7 +103,7 @@ func createAuthDivision(ctx context.Context, d *schema.ResourceData, meta interf
 	}
 
 	// Give auth service's indexes time to update
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	d.SetId(*division.Id)
 	log.Printf("Created division %s %s", name, *division.Id)
@@ -115,31 +116,32 @@ func readAuthDivision(ctx context.Context, d *schema.ResourceData, meta interfac
 
 	log.Printf("Reading division %s", d.Id())
 
-	division, resp, getErr := authAPI.GetAuthorizationDivision(d.Id(), false)
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		division, resp, getErr := authAPI.GetAuthorizationDivision(d.Id(), false)
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read division %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read division %s: %s", d.Id(), getErr))
 		}
-		return diag.Errorf("Failed to read division %s: %s", d.Id(), getErr)
-	}
 
-	d.Set("name", *division.Name)
+		d.Set("name", *division.Name)
 
-	if division.Description != nil {
-		d.Set("description", *division.Description)
-	} else {
-		d.Set("description", nil)
-	}
+		if division.Description != nil {
+			d.Set("description", *division.Description)
+		} else {
+			d.Set("description", nil)
+		}
 
-	if division.HomeDivision != nil {
-		d.Set("home", *division.HomeDivision)
-	} else {
-		d.Set("home", nil)
-	}
+		if division.HomeDivision != nil {
+			d.Set("home", *division.HomeDivision)
+		} else {
+			d.Set("home", nil)
+		}
 
-	log.Printf("Read division %s %s", d.Id(), *division.Name)
-	return nil
+		log.Printf("Read division %s %s", d.Id(), *division.Name)
+		return nil
+	})
 }
 
 func updateAuthDivision(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -161,7 +163,8 @@ func updateAuthDivision(ctx context.Context, d *schema.ResourceData, meta interf
 	log.Printf("Updated division %s", name)
 
 	// Give time for public API caches to update
-	time.Sleep(5 * time.Second)
+	// It takes a long time with auth resources
+	time.Sleep(20 * time.Second)
 	return readAuthDivision(ctx, d, meta)
 }
 
@@ -189,7 +192,7 @@ func deleteAuthDivision(ctx context.Context, d *schema.ResourceData, meta interf
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		_, resp, err := authAPI.GetAuthorizationDivision(d.Id(), false)
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Division deleted
 				log.Printf("Deleted division %s", name)
 				return nil

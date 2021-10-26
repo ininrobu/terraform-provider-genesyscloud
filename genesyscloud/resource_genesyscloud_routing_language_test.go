@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceRoutingLanguageBasic(t *testing.T) {
@@ -64,7 +64,7 @@ func testVerifyLanguagesDestroyed(state *terraform.State) error {
 				continue
 			}
 			return fmt.Errorf("Language (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Language not found as expected
 			continue
 		} else {

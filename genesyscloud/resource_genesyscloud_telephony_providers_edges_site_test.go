@@ -5,19 +5,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAccResourceSite(t *testing.T) {
 	var (
 		// site
 		siteRes      = "site"
-		name         = "site " + uuid.NewString()
-		description1 = "test site description 1"
-		description2 = "test site description 2"
+		name1        = "site " + uuid.NewString()
+		name2        = "site " + uuid.NewString()
+		description1 = "TestAccResourceSite description 1"
+		description2 = "TestAccResourceSite description 2"
 		mediaModel   = "Cloud"
 
 		// edge_auto_update_config
@@ -32,13 +34,24 @@ func TestAccResourceSite(t *testing.T) {
 		locationRes = "test-location1"
 	)
 
+	err := authorizeSdk()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emergencyNumber := "3173124740"
+	err = deleteLocationWithNumber(emergencyNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	location := generateLocationResource(
 		locationRes,
 		"Terraform location"+uuid.NewString(),
 		"HQ1",
 		[]string{},
 		generateLocationEmergencyNum(
-			"3173124740",
+			emergencyNumber,
 			nullValue, // Default number type
 		), generateLocationAddress(
 			"7601 Interactive Way",
@@ -55,30 +68,30 @@ func TestAccResourceSite(t *testing.T) {
 			{
 				Config: generateSiteResourceWithCustomAttrs(
 					siteRes,
-					name,
+					name1,
 					description1,
 					"genesyscloud_location."+locationRes+".id",
 					mediaModel,
 					false) + location,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "name", name),
+					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "name", name1),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "description", description1),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "media_model", mediaModel),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "media_regions_use_latency_based", falseValue),
 					resource.TestCheckResourceAttrPair("genesyscloud_telephony_providers_edges_site."+siteRes, "location_id", "genesyscloud_location."+locationRes, "id"),
 				),
 			},
-			// Update description and media_regions_use_latency_based
+			// Update description, name and media_regions_use_latency_based
 			{
 				Config: generateSiteResourceWithCustomAttrs(
 					siteRes,
-					name,
+					name2,
 					description2,
 					"genesyscloud_location."+locationRes+".id",
 					mediaModel,
 					true) + location,
 				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "name", name),
+					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "name", name2),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "description", description2),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "media_model", mediaModel),
 					resource.TestCheckResourceAttr("genesyscloud_telephony_providers_edges_site."+siteRes, "media_regions_use_latency_based", trueValue),
@@ -89,7 +102,7 @@ func TestAccResourceSite(t *testing.T) {
 			{
 				Config: generateSiteResourceWithCustomAttrs(
 					siteRes,
-					name,
+					name2,
 					description2,
 					"genesyscloud_location."+locationRes+".id",
 					mediaModel,
@@ -110,7 +123,7 @@ func TestAccResourceSite(t *testing.T) {
 			{
 				Config: generateSiteResourceWithCustomAttrs(
 					siteRes,
-					name,
+					name2,
 					description2,
 					"genesyscloud_location."+locationRes+".id",
 					mediaModel,
@@ -137,12 +150,23 @@ func TestAccResourceSiteNumberPlans(t *testing.T) {
 		// site
 		siteRes     = "site"
 		name        = "site " + uuid.NewString()
-		description = "test site description 1"
+		description = "TestAccResourceSiteNumberPlans description 1"
 		mediaModel  = "Cloud"
 
 		// location
 		locationRes = "test-location1"
 	)
+
+	err := authorizeSdk()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emergencyNumber := "3173124741"
+	err = deleteLocationWithNumber(emergencyNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	location := generateLocationResource(
 		locationRes,
@@ -150,7 +174,7 @@ func TestAccResourceSiteNumberPlans(t *testing.T) {
 		"HQ1",
 		[]string{},
 		generateLocationEmergencyNum(
-			"3173124741",
+			emergencyNumber,
 			nullValue, // Default number type
 		), generateLocationAddress(
 			"7601 Interactive Way",
@@ -317,12 +341,23 @@ func TestAccResourceSiteOutboundRoutes(t *testing.T) {
 		// site
 		siteRes     = "site"
 		name        = "site " + uuid.NewString()
-		description = "test site description 1"
+		description = "TestAccResourceSiteOutboundRoutes description 1"
 		mediaModel  = "Cloud"
 
 		// location
 		locationRes = "test-location1"
 	)
+
+	err := authorizeSdk()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emergencyNumber := "3173124742"
+	err = deleteLocationWithNumber(emergencyNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	location := generateLocationResource(
 		locationRes,
@@ -330,7 +365,7 @@ func TestAccResourceSiteOutboundRoutes(t *testing.T) {
 		"HQ1",
 		[]string{},
 		generateLocationEmergencyNum(
-			"3173124742",
+			emergencyNumber,
 			nullValue, // Default number type
 		), generateLocationAddress(
 			"7601 Interactive Way",
@@ -444,6 +479,64 @@ func TestAccResourceSiteOutboundRoutes(t *testing.T) {
 	})
 }
 
+func deleteLocationWithNumber(emergencyNumber string) error {
+	locationsAPI := platformclientv2.NewLocationsApiWithConfig(sdkConfig)
+
+	for pageNum := 1; ; pageNum++ {
+		const pageSize = 100
+		locations, _, getErr := locationsAPI.GetLocations(pageSize, pageNum, nil, "")
+		if getErr != nil {
+			return getErr
+		}
+
+		if locations.Entities == nil || len(*locations.Entities) == 0 {
+			break
+		}
+
+		for _, location := range *locations.Entities {
+			if location.EmergencyNumber != nil {
+				if strings.Contains(*location.EmergencyNumber.E164, emergencyNumber) {
+					err := deleteSiteWithLocationId(*location.Id)
+					if err != nil {
+						return err
+					}
+					_, err = locationsAPI.DeleteLocation(*location.Id)
+					time.Sleep(10 * time.Second)
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func deleteSiteWithLocationId(locationId string) error {
+	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
+	for pageNum := 1; ; pageNum++ {
+		const pageSize = 100
+		sites, _, getErr := edgesAPI.GetTelephonyProvidersEdgesSites(pageSize, pageNum, "", "", "", "", false)
+		if getErr != nil {
+			return getErr
+		}
+
+		if sites.Entities == nil || len(*sites.Entities) == 0 {
+			return nil
+		}
+
+		for _, site := range *sites.Entities {
+			if *site.Location.Id == locationId {
+				_, err := edgesAPI.DeleteTelephonyProvidersEdgesSite(*site.Id)
+				if err != nil {
+					return err
+				}
+				time.Sleep(10 * time.Second)
+				break
+			}
+		}
+	}
+}
+
 func testVerifySitesDestroyed(state *terraform.State) error {
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApi()
 	for _, rs := range state.RootModule().Resources {
@@ -458,7 +551,7 @@ func testVerifySitesDestroyed(state *terraform.State) error {
 				continue
 			}
 			return fmt.Errorf("site (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// site not found as expected
 			continue
 		} else {

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceIntegrationAction(t *testing.T) {
@@ -63,7 +63,7 @@ func TestAccResourceIntegrationAction(t *testing.T) {
 					generateIntegrationActionConfigRequest(
 						reqUrlTemplate1,
 						reqType1,
-						nullValue, // Default req template
+						nullValue, // Default req templatezz
 						"",        // No headers
 					),
 					// Default config response
@@ -257,7 +257,7 @@ func testVerifyIntegrationActionDestroyed(state *terraform.State) error {
 		action, resp, err := integrationAPI.GetIntegrationsAction(rs.Primary.ID, "", false)
 		if action != nil {
 			return fmt.Errorf("Integration action (%s) still exists", rs.Primary.ID)
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Action not found as expected
 			continue
 		} else {

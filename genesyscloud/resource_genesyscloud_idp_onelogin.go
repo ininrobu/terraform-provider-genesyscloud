@@ -9,16 +9,16 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllIdpOnelogin(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllIdpOnelogin(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	idpAPI := platformclientv2.NewIdentityProviderApiWithConfig(clientConfig)
 	resources := make(ResourceIDMetaMap)
 
 	_, resp, getErr := idpAPI.GetIdentityprovidersOnelogin()
 	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+		if isStatus404(resp) {
 			// Don't export if config doesn't exist
 			return resources, nil
 		}
@@ -86,43 +86,45 @@ func readIdpOnelogin(ctx context.Context, d *schema.ResourceData, meta interface
 	idpAPI := platformclientv2.NewIdentityProviderApiWithConfig(sdkConfig)
 
 	log.Printf("Reading IDP Onelogin")
-	onelogin, resp, getErr := idpAPI.GetIdentityprovidersOnelogin()
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
-			d.SetId("")
-			return nil
+
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		onelogin, resp, getErr := idpAPI.GetIdentityprovidersOnelogin()
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read IDP Onelogin: %s", getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read IDP Onelogin: %s", getErr))
 		}
-		return diag.Errorf("Failed to read IDP Onelogin: %s", getErr)
-	}
 
-	if onelogin.Certificate != nil {
-		d.Set("certificates", stringListToSet([]string{*onelogin.Certificate}))
-	} else if onelogin.Certificates != nil {
-		d.Set("certificates", stringListToSet(*onelogin.Certificates))
-	} else {
-		d.Set("certificates", nil)
-	}
+		if onelogin.Certificate != nil {
+			d.Set("certificates", stringListToSet([]string{*onelogin.Certificate}))
+		} else if onelogin.Certificates != nil {
+			d.Set("certificates", stringListToSet(*onelogin.Certificates))
+		} else {
+			d.Set("certificates", nil)
+		}
 
-	if onelogin.IssuerURI != nil {
-		d.Set("issuer_uri", *onelogin.IssuerURI)
-	} else {
-		d.Set("issuer_uri", nil)
-	}
+		if onelogin.IssuerURI != nil {
+			d.Set("issuer_uri", *onelogin.IssuerURI)
+		} else {
+			d.Set("issuer_uri", nil)
+		}
 
-	if onelogin.SsoTargetURI != nil {
-		d.Set("target_uri", *onelogin.SsoTargetURI)
-	} else {
-		d.Set("target_uri", nil)
-	}
+		if onelogin.SsoTargetURI != nil {
+			d.Set("target_uri", *onelogin.SsoTargetURI)
+		} else {
+			d.Set("target_uri", nil)
+		}
 
-	if onelogin.Disabled != nil {
-		d.Set("disabled", *onelogin.Disabled)
-	} else {
-		d.Set("disabled", nil)
-	}
+		if onelogin.Disabled != nil {
+			d.Set("disabled", *onelogin.Disabled)
+		} else {
+			d.Set("disabled", nil)
+		}
 
-	log.Printf("Read IDP Onelogin")
-	return nil
+		log.Printf("Read IDP Onelogin")
+		return nil
+	})
 }
 
 func updateIdpOnelogin(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -155,11 +157,13 @@ func updateIdpOnelogin(ctx context.Context, d *schema.ResourceData, meta interfa
 	}
 
 	log.Printf("Updated IDP Onelogin")
-	time.Sleep(2 * time.Second)
+	// Give time for public API caches to update
+	// It takes a long time with idp resources
+	time.Sleep(20 * time.Second)
 	return readIdpOnelogin(ctx, d, meta)
 }
 
-func deleteIdpOnelogin(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func deleteIdpOnelogin(ctx context.Context, _ *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	sdkConfig := meta.(*providerMeta).ClientConfig
 	idpAPI := platformclientv2.NewIdentityProviderApiWithConfig(sdkConfig)
 
@@ -172,7 +176,7 @@ func deleteIdpOnelogin(ctx context.Context, d *schema.ResourceData, meta interfa
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		_, resp, err := idpAPI.GetIdentityprovidersOnelogin()
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// IDP Onelogin deleted
 				log.Printf("Deleted IDP Onelogin")
 				return nil

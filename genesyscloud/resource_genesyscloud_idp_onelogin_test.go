@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
 func TestAccResourceIdpOnelogin(t *testing.T) {
@@ -101,7 +101,7 @@ func testVerifyIdpOneloginDestroyed(state *terraform.State) error {
 		onelogin, resp, err := idpAPI.GetIdentityprovidersOnelogin()
 		if onelogin != nil {
 			return fmt.Errorf("Onelogin still exists")
-		} else if resp != nil && resp.StatusCode == 404 {
+		} else if isStatus404(resp) {
 			// Onelogin not found as expected
 			continue
 		} else {

@@ -24,7 +24,7 @@ jobs:
       id: go
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v2.3.4
+      uses: actions/checkout@v2.3.5
 
     - name: Get dependencies
       run: |
@@ -62,14 +62,14 @@ jobs:
         terraform_version: ${{ matrix.terraform }}
 
     - name: Check out code into the Go module directory
-      uses: actions/checkout@v2.3.4
+      uses: actions/checkout@v2.3.5
 
     - name: Get dependencies
       run: |
         go mod download
-        
+
     - name: TF acceptance tests
-      timeout-minutes: 30
+      timeout-minutes: 45
       env:
         TF_ACC: "1"
         TF_LOG: "INFO"
@@ -79,7 +79,7 @@ jobs:
         GENESYSCLOUD_OAUTHCLIENT_ID: ${{ secrets.TEST_GENESYSCLOUD_OAUTHCLIENT_ID }}
         GENESYSCLOUD_OAUTHCLIENT_SECRET: ${{ secrets.TEST_GENESYSCLOUD_OAUTHCLIENT_SECRET }}
         GENESYSCLOUD_REGION: "us-east-1"
-        GENESYSCLOUD_SDK_DEBUG: "false"
+        GENESYSCLOUD_SDK_DEBUG: "true"
       run: |
         go test -timeout 60m -v -cover ./genesyscloud/
 
@@ -97,4 +97,12 @@ jobs:
       with:
         name: logs ${{ matrix.terraform }}
         path: ./test.log
+        retention-days: 5
+
+    - name: 'Upload SDK Log'
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: sdk_log ${{ matrix.terraform }}
+        path: ./genesyscloud/sdk_debug.log
         retention-days: 5

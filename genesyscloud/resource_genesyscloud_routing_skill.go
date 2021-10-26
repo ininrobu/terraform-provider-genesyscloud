@@ -9,15 +9,16 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
-func getAllRoutingSkills(ctx context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
+func getAllRoutingSkills(_ context.Context, clientConfig *platformclientv2.Configuration) (ResourceIDMetaMap, diag.Diagnostics) {
 	resources := make(ResourceIDMetaMap)
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(clientConfig)
 
 	for pageNum := 1; ; pageNum++ {
-		skills, _, getErr := routingAPI.GetRoutingSkills(100, pageNum, "", nil)
+		const pageSize = 100
+		skills, _, getErr := routingAPI.GetRoutingSkills(pageSize, pageNum, "", nil)
 		if getErr != nil {
 			return nil, diag.Errorf("Failed to get page of skills: %v", getErr)
 		}
@@ -90,23 +91,24 @@ func readRoutingSkill(ctx context.Context, d *schema.ResourceData, meta interfac
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(sdkConfig)
 
 	log.Printf("Reading skill %s", d.Id())
-	skill, resp, getErr := routingAPI.GetRoutingSkill(d.Id())
-	if getErr != nil {
-		if resp != nil && resp.StatusCode == 404 {
+	return withRetriesForRead(ctx, 30*time.Second, d, func() *resource.RetryError {
+		skill, resp, getErr := routingAPI.GetRoutingSkill(d.Id())
+		if getErr != nil {
+			if isStatus404(resp) {
+				return resource.RetryableError(fmt.Errorf("Failed to read skill %s: %s", d.Id(), getErr))
+			}
+			return resource.NonRetryableError(fmt.Errorf("Failed to read skill %s: %s", d.Id(), getErr))
+		}
+
+		if skill.State != nil && *skill.State == "deleted" {
 			d.SetId("")
 			return nil
 		}
-		return diag.Errorf("Failed to read skill %s: %s", d.Id(), getErr)
-	}
 
-	if skill.State != nil && *skill.State == "deleted" {
-		d.SetId("")
+		d.Set("name", *skill.Name)
+		log.Printf("Read skill %s %s", d.Id(), *skill.Name)
 		return nil
-	}
-
-	d.Set("name", *skill.Name)
-	log.Printf("Read skill %s %s", d.Id(), *skill.Name)
-	return nil
+	})
 }
 
 func deleteRoutingSkill(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
@@ -124,7 +126,7 @@ func deleteRoutingSkill(ctx context.Context, d *schema.ResourceData, meta interf
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
 		routingSkill, resp, err := routingAPI.GetRoutingSkill(d.Id())
 		if err != nil {
-			if resp != nil && resp.StatusCode == 404 {
+			if isStatus404(resp) {
 				// Routing skill deleted
 				log.Printf("Deleted Routing skill %s", d.Id())
 				return nil

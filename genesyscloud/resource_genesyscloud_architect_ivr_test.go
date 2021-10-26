@@ -2,14 +2,15 @@ package genesyscloud
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
-	"testing"
-
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/mypurecloud/platform-client-sdk-go/v55/platformclientv2"
+	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
+	"math/rand"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
 )
 
 type ivrConfigStruct struct {
@@ -24,7 +25,9 @@ func TestAccResourceIvrConfigBasic(t *testing.T) {
 	ivrConfigResource1 := "test-ivrconfig1"
 	ivrConfigName := "terraform-ivrconfig-" + uuid.NewString()
 	ivrConfigDescription := "Terraform IVR config"
-	ivrConfigDnis := []string{"+13175550010", "+13175550011"}
+	rand.Seed(time.Now().Unix())
+	n := rand.Intn(9)
+	ivrConfigDnis := []string{fmt.Sprintf("+1417555001%v", n), fmt.Sprintf("+1417555001%v", n + 1)}
 	didPoolResource1 := "test-didpool1"
 
 	resource.Test(t, resource.TestCase{
@@ -116,7 +119,7 @@ func testVerifyIvrConfigsDestroyed(state *terraform.State) error {
 			return fmt.Errorf("IVR config (%s) still exists", rs.Primary.ID)
 		}
 
-		if resp != nil && resp.StatusCode == 404 {
+		if isStatus404(resp) {
 			// IVR Config not found as expected
 			continue
 		}
