@@ -220,7 +220,7 @@ func getSites(_ context.Context, sdkConfig *platformclientv2.Configuration) (Res
 		}
 
 		for _, site := range *sites.Entities {
-			if *site.State != "deleted" {
+			if site.State != nil && *site.State != "deleted" {
 				resources[*site.Id] = &ResourceMeta{Name: *site.Name}
 			}
 		}
@@ -425,9 +425,13 @@ func deleteSite(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 	edgesAPI := platformclientv2.NewTelephonyProvidersEdgeApiWithConfig(sdkConfig)
 
 	log.Printf("Deleting site")
-	_, err := edgesAPI.DeleteTelephonyProvidersEdgesSite(d.Id())
+	resp, err := edgesAPI.DeleteTelephonyProvidersEdgesSite(d.Id())
 	if err != nil {
-		return diag.Errorf("Failed to delete site: %s", err)
+		if isStatus404(resp) {
+			log.Printf("Site already deleted %s", d.Id())
+			return nil
+		}
+		return diag.Errorf("Failed to delete site: %s %s", d.Id(), err)
 	}
 
 	return withRetries(ctx, 30*time.Second, func() *resource.RetryError {
@@ -444,7 +448,7 @@ func deleteSite(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 			return resource.NonRetryableError(fmt.Errorf("Error deleting site %s: %s", d.Id(), err))
 		}
 
-		if *site.State == "deleted" {
+		if site.State != nil && *site.State == "deleted" {
 			// Site deleted
 			log.Printf("Deleted site %s", d.Id())
 			// Need to sleep here because if terraform deletes the dependent location straight away
@@ -569,9 +573,20 @@ func updateSiteNumberPlans(d *schema.ResourceData, edgesAPI *platformclientv2.Te
 				}
 			}
 
-			_, _, err = edgesAPI.PutTelephonyProvidersEdgesSiteNumberplans(d.Id(), updatedNumberPlans)
-			if err != nil {
-				return diag.Errorf("Failed to update number plans for site %s: %s", d.Id(), err)
+			diagErr := retryWhen(isStatus400, func() (*platformclientv2.APIResponse, diag.Diagnostics) {
+				log.Printf("Updating number plans for site %s", d.Id())
+				_, resp, err := edgesAPI.PutTelephonyProvidersEdgesSiteNumberplans(d.Id(), updatedNumberPlans)
+				if err != nil {
+					respString := ""
+					if resp != nil {
+						respString = resp.String()
+					}
+					return resp, diag.Errorf("Failed to update number plans for site %s: %s %s", d.Id(), err, respString)
+				}
+				return resp, nil
+			})
+			if diagErr != nil {
+				return diagErr
 			}
 			// Wait for the update before reading
 			time.Sleep(5 * time.Second)

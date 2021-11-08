@@ -154,7 +154,6 @@ func createGroup(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 	log.Printf("Creating group %s", name)
 	group, _, err := groupsAPI.PostGroups(platformclientv2.Groupcreate{
 		Name:         &name,
-		Description:  &description,
 		VarType:      &groupType,
 		Visibility:   &visibility,
 		RulesVisible: &rulesVisible,
@@ -166,6 +165,14 @@ func createGroup(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 	}
 
 	d.SetId(*group.Id)
+
+	// Description can only be set in a PUT. This is a bug with the API and has been reported
+	if description != "" {
+		diagErr := updateGroup(ctx, d, meta)
+		if diagErr != nil {
+			return diagErr
+		}
+	}
 
 	diagErr := updateGroupMembers(d, groupsAPI)
 	if diagErr != nil {
@@ -298,7 +305,7 @@ func deleteGroup(ctx context.Context, d *schema.ResourceData, meta interface{}) 
 			return resource.NonRetryableError(fmt.Errorf("Error deleting group %s: %s", d.Id(), err))
 		}
 
-		if *group.State == "deleted" {
+		if group.State != nil && *group.State == "deleted" {
 			log.Printf("Group %s deleted", name)
 			return nil
 		}
@@ -440,8 +447,9 @@ func updateGroupMembers(d *schema.ResourceData, groupsAPI *platformclientv2.Grou
 						Version:   groupInfo.Version,
 					})
 					if err != nil {
-						return resp, diag.Errorf("Failed to read group %s: %s", d.Id(), postErr)
+						return resp, diag.Errorf("Failed to add group members %s: %s", d.Id(), postErr)
 					}
+					time.Sleep(10 * time.Second)
 					return resp, nil
 				}); diagErr != nil {
 					return diagErr

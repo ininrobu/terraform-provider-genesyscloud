@@ -74,6 +74,9 @@ func getAllRoutingQueues(_ context.Context, clientConfig *platformclientv2.Confi
 	resources := make(ResourceIDMetaMap)
 	routingAPI := platformclientv2.NewRoutingApiWithConfig(clientConfig)
 
+	// Newly created resources often aren't returned unless there's a delay
+	time.Sleep(5 * time.Second)
+
 	for pageNum := 1; ; pageNum++ {
 		const pageSize = 100
 		queues, _, getErr := routingAPI.GetRoutingQueues(pageNum, pageSize, "", "", nil, nil)
@@ -116,7 +119,6 @@ func routingQueueExporter() *ResourceExporter {
 }
 
 func resourceRoutingQueue() *schema.Resource {
-	timeout, _ := time.ParseDuration("100s")
 	return &schema.Resource{
 		Description: "Genesys Cloud Routing Queue",
 
@@ -126,9 +128,6 @@ func resourceRoutingQueue() *schema.Resource {
 		DeleteContext: deleteWithPooledClient(deleteQueue),
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
-		},
-		Timeouts: &schema.ResourceTimeout{
-			Default: &timeout,
 		},
 		SchemaVersion: 1,
 		Schema: map[string]*schema.Schema{

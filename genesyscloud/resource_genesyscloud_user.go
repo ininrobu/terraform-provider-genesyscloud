@@ -113,6 +113,9 @@ func getAllUsers(_ context.Context, sdkConfig *platformclientv2.Configuration) (
 	resources := make(ResourceIDMetaMap)
 	usersAPI := platformclientv2.NewUsersApiWithConfig(sdkConfig)
 
+	// Newly created resources often aren't returned unless there's a delay
+	time.Sleep(5 * time.Second)
+
 	for pageNum := 1; ; pageNum++ {
 		const pageSize = 100
 		users, _, getErr := usersAPI.GetUsers(pageSize, pageNum, nil, nil, "", nil, "", "")
@@ -147,7 +150,7 @@ func userExporter() *ResourceExporter {
 			"routing_languages": {"language_id"},
 			"locations":         {"location_id"},
 		},
-		AllowZeroValues: []string{"routing_skills.proficiency"},
+		AllowZeroValues: []string{"routing_skills.proficiency" ,"routing_languages.proficiency"},
 	}
 }
 
@@ -641,6 +644,7 @@ func deleteUser(ctx context.Context, d *schema.ResourceData, meta interface{}) d
 		// Directory occasionally returns version errors on deletes if an object was updated at the same time.
 		_, resp, err := usersAPI.DeleteUser(d.Id())
 		if err != nil {
+			time.Sleep(5 * time.Second)
 			return resp, diag.Errorf("Failed to delete user %s: %s", email, err)
 		}
 		log.Printf("Deleted user %s", email)
