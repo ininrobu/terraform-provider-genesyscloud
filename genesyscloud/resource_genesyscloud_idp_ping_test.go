@@ -10,8 +10,15 @@ import (
 	"github.com/mypurecloud/platform-client-sdk-go/v56/platformclientv2"
 )
 
+func TestAccResourceIdpPingLoop(t *testing.T) {
+	for ;; {
+		TestAccResourceIdpPing(t)
+	}
+}
+
 func TestAccResourceIdpPing(t *testing.T) {
-	t.Skip("Skipping IDP tests because the cache TTL is so long")
+	t.Parallel()
+	//t.Skip("Skipping IDP tests because the cache TTL is so long")
 	var (
 		uri1            = "https://test.com/1"
 		uri2            = "https://test.com/2"

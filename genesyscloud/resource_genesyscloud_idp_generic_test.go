@@ -11,7 +11,8 @@ import (
 )
 
 func TestAccResourceIdpGeneric(t *testing.T) {
-	t.Skip("Skipping IDP tests because the cache TTL is so long")
+	t.Parallel()
+	//t.Skip("Skipping IDP tests because the cache TTL is so long")
 	var (
 		name1               = "generic1"
 		name2               = "generic2"
